@@ -15,7 +15,9 @@ class SAESGui:
     def __init__(self, root):
         self.root = root
         self.root.title("S-AES 综合加解密工具 (全关卡)")
-        self.root.geometry("700x600")
+        # 700x600 会裁掉第4/5关的输入框，这里按最大控件宽度放大
+        self.root.geometry("900x640")
+        self.root.minsize(900, 640)
 
         # 创建选项卡
         self.notebook = ttk.Notebook(root)
@@ -181,20 +183,24 @@ class SAESGui:
             self.root.update()
 
             p = int(self.multi_input.get(), 16)
-            # 这里假设用户想要用当前的密文去碰撞，为了演示，我们现生成一个密文
-            # 真实攻击中，这是已知的明密文对
             key32 = int(self.multi_key.get(), 16)
+            # 攻击方只能看到"已知的明密文对"，这里用当前密钥现造两对：
+            # 单对在 16 bit 分组下假阳性太多，必须用第二对才能唯一定位密钥
+            p2 = 0x1234 if p != 0x1234 else 0x5678
             c = double_encrypt(p, key32)
+            c2 = double_encrypt(p2, key32)
 
             start_time = time.time()
-            keys = meet_in_the_middle_attack(p, c)
+            keys = meet_in_the_middle_attack(p, c, extra_pairs=[(p2, c2)])
             elapsed = time.time() - start_time
 
-            out = f"已知明密文对: P={p:04X}, C={c:04X}\n"
+            out = f"已知明密文对1: P={p:04X}, C={c:04X}\n"
+            out += f"已知明密文对2: P={p2:04X}, C={c2:04X}\n"
             out += f"耗时: {elapsed:.2f} 秒\n"
             out += f"找到 {len(keys)} 个可能的密钥对:\n"
             for k1, k2 in keys[:5]:  # 只展示前5个防刷屏
-                out += f"K1={k1:04X}, K2={k2:04X}\n"
+                hit = "  <-- 与真实密钥一致" if (k1 << 16 | k2) == key32 else ""
+                out += f"K1={k1:04X}, K2={k2:04X}{hit}\n"
             if len(keys) > 5: out += "...\n"
 
             self.multi_output.delete("1.0", tk.END)

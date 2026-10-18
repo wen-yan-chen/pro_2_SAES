@@ -1,4 +1,10 @@
 # tests/test_core.py
+import os
+import sys
+
+# 允许直接从仓库根目录执行 python tests/test_core.py
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from saes.core import s_aes_encrypt, s_aes_decrypt
 
 
