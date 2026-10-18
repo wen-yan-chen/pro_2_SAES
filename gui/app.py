@@ -1,125 +1,232 @@
 # gui/app.py
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import ttk, messagebox
 import sys
 import os
+import time
 
-# 确保能找到 saes 包
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from saes.core import s_aes_encrypt, s_aes_decrypt
+from saes.multi_crypto import double_encrypt, double_decrypt, meet_in_the_middle_attack, triple_encrypt, triple_decrypt
+from saes.cbc_mode import cbc_encrypt, cbc_decrypt
 
 
 class SAESGui:
     def __init__(self, root):
         self.root = root
-        self.root.title("S-AES 加解密工具 (第1关 & 第3关)")
-        self.root.geometry("600x450")
+        self.root.title("S-AES 综合加解密工具 (全关卡)")
+        self.root.geometry("700x600")
 
-        # 1. 密钥输入
-        tk.Label(root, text="密钥 (16-bit 十六进制，如 4AF5):", font=("Arial", 10)).pack(pady=(10, 0))
-        self.entry_key = tk.Entry(root, width=50)
-        self.entry_key.insert(0, "4AF5")
-        self.entry_key.pack(pady=5)
+        # 创建选项卡
+        self.notebook = ttk.Notebook(root)
+        self.notebook.pack(expand=True, fill='both', padx=10, pady=10)
 
-        # 2. 输入数据 (明文或密文)
-        tk.Label(root, text="输入数据 (16-bit 十六进制 如 D728，或 ASCII 字符串):", font=("Arial", 10)).pack(
-            pady=(10, 0))
-        self.text_input = tk.Text(root, height=4, width=60)
-        self.text_input.insert("1.0", "D728")  # 默认填入标准测试向量
-        self.text_input.pack(pady=5)
+        self.tab_basic = ttk.Frame(self.notebook)
+        self.tab_multi = ttk.Frame(self.notebook)
+        self.tab_cbc = ttk.Frame(self.notebook)
 
-        # 3. 按钮区域
-        frame_btns = tk.Frame(root)
-        frame_btns.pack(pady=10)
+        self.notebook.add(self.tab_basic, text='第1/3关: 基础加解密')
+        self.notebook.add(self.tab_multi, text='第4关: 多重加密')
+        self.notebook.add(self.tab_cbc, text='第5关: CBC工作模式')
 
-        btn_encrypt = tk.Button(frame_btns, text="加密 (Encrypt)", command=self.do_encrypt, bg="#a3c4f3", width=15)
-        btn_encrypt.pack(side=tk.LEFT, padx=10)
+        self.setup_basic_tab()
+        self.setup_multi_tab()
+        self.setup_cbc_tab()
 
-        btn_decrypt = tk.Button(frame_btns, text="解密 (Decrypt)", command=self.do_decrypt, bg="#f3a3a3", width=15)
-        btn_decrypt.pack(side=tk.LEFT, padx=10)
+    def setup_basic_tab(self):
+        # 基础选项卡
+        frame = tk.Frame(self.tab_basic)
+        frame.pack(pady=20)
 
-        # 4. 输出结果
-        tk.Label(root, text="输出结果:", font=("Arial", 10)).pack(pady=(10, 0))
-        self.text_output = tk.Text(root, height=6, width=60, bg="#f0f0f0")
-        self.text_output.pack(pady=5)
+        tk.Label(frame, text="密钥 (16-bit, 如 4AF5):").grid(row=0, column=0, pady=5)
+        self.basic_key = tk.Entry(frame, width=30)
+        self.basic_key.insert(0, "4AF5")
+        self.basic_key.grid(row=0, column=1, pady=5)
 
-    def get_key(self):
+        tk.Label(frame, text="输入数据 (16进制或ASCII):").grid(row=1, column=0, pady=5)
+        self.basic_input = tk.Text(frame, height=4, width=40)
+        self.basic_input.insert("1.0", "D728")
+        self.basic_input.grid(row=1, column=1, pady=5)
+
+        btn_frame = tk.Frame(frame)
+        btn_frame.grid(row=2, column=0, columnspan=2, pady=10)
+        tk.Button(btn_frame, text="单次加密", command=self.do_basic_encrypt).pack(side=tk.LEFT, padx=10)
+        tk.Button(btn_frame, text="单次解密", command=self.do_basic_decrypt).pack(side=tk.LEFT, padx=10)
+
+        self.basic_output = tk.Text(frame, height=6, width=50, bg="#f0f0f0")
+        self.basic_output.grid(row=3, column=0, columnspan=2, pady=5)
+
+    def setup_multi_tab(self):
+        # 多重加密选项卡
+        frame = tk.Frame(self.tab_multi)
+        frame.pack(pady=20)
+
+        tk.Label(frame, text="32-bit / 48-bit 密钥 (16进制):").grid(row=0, column=0, pady=5)
+        self.multi_key = tk.Entry(frame, width=30)
+        self.multi_key.insert(0, "4AF51234")  # 默认32bit
+        self.multi_key.grid(row=0, column=1, pady=5)
+
+        tk.Label(frame, text="输入数据 (16-bit 16进制):").grid(row=1, column=0, pady=5)
+        self.multi_input = tk.Entry(frame, width=35)
+        self.multi_input.insert(0, "D728")
+        self.multi_input.grid(row=1, column=1, pady=5)
+
+        btn_frame1 = tk.Frame(frame)
+        btn_frame1.grid(row=2, column=0, columnspan=2, pady=5)
+        tk.Button(btn_frame1, text="双重加密", command=lambda: self.do_multi(True, False)).pack(side=tk.LEFT, padx=10)
+        tk.Button(btn_frame1, text="双重解密", command=lambda: self.do_multi(False, False)).pack(side=tk.LEFT, padx=10)
+
+        btn_frame2 = tk.Frame(frame)
+        btn_frame2.grid(row=3, column=0, columnspan=2, pady=5)
+        tk.Button(btn_frame2, text="三重加密(48-bit)", command=lambda: self.do_multi(True, True)).pack(side=tk.LEFT,
+                                                                                                       padx=10)
+        tk.Button(btn_frame2, text="三重解密(48-bit)", command=lambda: self.do_multi(False, True)).pack(side=tk.LEFT,
+                                                                                                        padx=10)
+
+        tk.Button(frame, text="运行中间相遇攻击 (可能耗时几秒)", bg="orange", command=self.do_mitm).grid(row=4,
+                                                                                                         column=0,
+                                                                                                         columnspan=2,
+                                                                                                         pady=10)
+
+        self.multi_output = tk.Text(frame, height=8, width=60, bg="#f0f0f0")
+        self.multi_output.grid(row=5, column=0, columnspan=2, pady=5)
+
+    def setup_cbc_tab(self):
+        # CBC 选项卡
+        frame = tk.Frame(self.tab_cbc)
+        frame.pack(pady=20)
+
+        tk.Label(frame, text="16-bit 密钥:").grid(row=0, column=0, pady=5)
+        self.cbc_key = tk.Entry(frame, width=20)
+        self.cbc_key.insert(0, "4AF5")
+        self.cbc_key.grid(row=0, column=1, pady=5)
+
+        tk.Label(frame, text="16-bit IV (初始向量):").grid(row=0, column=2, pady=5)
+        self.cbc_iv = tk.Entry(frame, width=20)
+        self.cbc_iv.insert(0, "0000")
+        self.cbc_iv.grid(row=0, column=3, pady=5)
+
+        tk.Label(frame, text="CBC 输入明文/密文 (支持长字符串或空格分隔的16进制):").grid(row=1, column=0, columnspan=4,
+                                                                                         pady=5)
+        self.cbc_input = tk.Text(frame, height=4, width=60)
+        self.cbc_input.insert("1.0", "HELLO CBC MODE")
+        self.cbc_input.grid(row=2, column=0, columnspan=4, pady=5)
+
+        btn_frame = tk.Frame(frame)
+        btn_frame.grid(row=3, column=0, columnspan=4, pady=10)
+        tk.Button(btn_frame, text="CBC 加密", command=self.do_cbc_encrypt).pack(side=tk.LEFT, padx=10)
+        tk.Button(btn_frame, text="CBC 解密", command=self.do_cbc_decrypt).pack(side=tk.LEFT, padx=10)
+
+        self.cbc_output = tk.Text(frame, height=6, width=60, bg="#f0f0f0")
+        self.cbc_output.grid(row=4, column=0, columnspan=4, pady=5)
+
+    # --- 逻辑处理函数 ---
+    def do_basic_encrypt(self):
         try:
-            key_hex = self.entry_key.get().strip()
-            key = int(key_hex, 16)
-            if key < 0 or key > 0xFFFF:
-                raise ValueError
-            return key
-        except ValueError:
-            messagebox.showerror("错误", "密钥必须是 16-bit 的十六进制数 (如 4AF5)！")
-            return None
-
-    def do_encrypt(self):
-        key = self.get_key()
-        if key is None: return
-
-        input_str = self.text_input.get("1.0", tk.END).strip()
-        if not input_str: return
-
-        self.text_output.delete("1.0", tk.END)
-
-        # 简单判断：如果输入像十六进制且长度为4，走16-bit加密（第1关）
-        try:
-            if len(input_str) == 4:
-                plaintext = int(input_str, 16)
-                ciphertext = s_aes_encrypt(plaintext, key)
-                self.text_output.insert(tk.END, f"十六进制密文: {ciphertext:04X}\n二进制密文: {ciphertext:016b}")
+            key = int(self.basic_key.get(), 16)
+            data = self.basic_input.get("1.0", "end-1c").strip()
+            if len(data) == 4:
+                res = s_aes_encrypt(int(data, 16), key)
+                self.basic_output.delete("1.0", tk.END)
+                self.basic_output.insert(tk.END, f"密文: {res:04X}")
             else:
-                raise ValueError
-        except ValueError:
-            # 否则走 ASCII 字符串加密（第3关）
-            self.text_output.insert(tk.END, "【ASCII 字符串加密模式】\n")
-            # 补全为偶数长度（2字节一组）
-            if len(input_str) % 2 != 0:
-                input_str += "\x00"
+                if len(data) % 2 != 0: data += "\x00"
+                res = [f"{s_aes_encrypt((ord(data[i]) << 8) | ord(data[i + 1]), key):04X}" for i in
+                       range(0, len(data), 2)]
+                self.basic_output.delete("1.0", tk.END)
+                self.basic_output.insert(tk.END, " ".join(res))
+        except Exception as e:
+            messagebox.showerror("错误", str(e))
 
-            result_hex = []
-            for i in range(0, len(input_str), 2):
-                block_str = input_str[i:i + 2]
-                # 转为 16-bit 整数
-                block = (ord(block_str[0]) << 8) | ord(block_str[1])
-                enc_block = s_aes_encrypt(block, key)
-                result_hex.append(f"{enc_block:04X}")
+    def do_basic_decrypt(self):
+        try:
+            key = int(self.basic_key.get(), 16)
+            data = self.basic_input.get("1.0", "end-1c").strip()
+            if " " in data:
+                res_str = ""
+                for block in data.split():
+                    p = s_aes_decrypt(int(block, 16), key)
+                    res_str += chr((p >> 8) & 0xFF) + chr(p & 0xFF)
+                self.basic_output.delete("1.0", tk.END)
+                self.basic_output.insert(tk.END, res_str.replace('\x00', ''))
+            else:
+                res = s_aes_decrypt(int(data, 16), key)
+                self.basic_output.delete("1.0", tk.END)
+                self.basic_output.insert(tk.END, f"明文: {res:04X}")
+        except Exception as e:
+            messagebox.showerror("错误", str(e))
 
-            self.text_output.insert(tk.END, " ".join(result_hex))
+    def do_multi(self, is_encrypt, is_triple):
+        try:
+            key_str = self.multi_key.get()
+            key = int(key_str, 16)
+            plain_or_cipher = int(self.multi_input.get(), 16)
 
-    def do_decrypt(self):
-        key = self.get_key()
-        if key is None: return
+            if is_triple:
+                if len(key_str) != 12: raise ValueError("三重加密需要 48-bit 密钥 (12个16进制字符)")
+                res = triple_encrypt(plain_or_cipher, key) if is_encrypt else triple_decrypt(plain_or_cipher, key)
+            else:
+                if len(key_str) != 8: raise ValueError("双重加密需要 32-bit 密钥 (8个16进制字符)")
+                res = double_encrypt(plain_or_cipher, key) if is_encrypt else double_decrypt(plain_or_cipher, key)
 
-        input_str = self.text_input.get("1.0", tk.END).strip()
-        if not input_str: return
+            self.multi_output.delete("1.0", tk.END)
+            self.multi_output.insert(tk.END, f"结果: {res:04X}")
+        except Exception as e:
+            messagebox.showerror("错误", str(e))
 
-        self.text_output.delete("1.0", tk.END)
+    def do_mitm(self):
+        try:
+            self.multi_output.delete("1.0", tk.END)
+            self.multi_output.insert(tk.END, "正在计算，请稍候...\n")
+            self.root.update()
 
-        # 如果是一串以空格分隔的十六进制块（ASCII 密文）
-        if " " in input_str or len(input_str) > 4:
-            try:
-                blocks = input_str.split()
-                result_str = ""
-                for b in blocks:
-                    c = int(b, 16)
-                    p = s_aes_decrypt(c, key)
-                    # 还原为字符
-                    result_str += chr((p >> 8) & 0xFF) + chr(p & 0xFF)
-                # 去掉补齐的空字符
-                result_str = result_str.replace('\x00', '')
-                self.text_output.insert(tk.END, f"ASCII 解密结果:\n{result_str}")
-            except Exception as e:
-                messagebox.showerror("错误", f"密文格式不正确！\n{str(e)}")
-        else:
-            # 16-bit 单块解密
-            try:
-                ciphertext = int(input_str, 16)
-                plaintext = s_aes_decrypt(ciphertext, key)
-                self.text_output.insert(tk.END, f"十六进制明文: {plaintext:04X}\n二进制明文: {plaintext:016b}")
-            except ValueError:
-                messagebox.showerror("错误", "密文必须是 16-bit 的十六进制数！")
+            p = int(self.multi_input.get(), 16)
+            # 这里假设用户想要用当前的密文去碰撞，为了演示，我们现生成一个密文
+            # 真实攻击中，这是已知的明密文对
+            key32 = int(self.multi_key.get(), 16)
+            c = double_encrypt(p, key32)
+
+            start_time = time.time()
+            keys = meet_in_the_middle_attack(p, c)
+            elapsed = time.time() - start_time
+
+            out = f"已知明密文对: P={p:04X}, C={c:04X}\n"
+            out += f"耗时: {elapsed:.2f} 秒\n"
+            out += f"找到 {len(keys)} 个可能的密钥对:\n"
+            for k1, k2 in keys[:5]:  # 只展示前5个防刷屏
+                out += f"K1={k1:04X}, K2={k2:04X}\n"
+            if len(keys) > 5: out += "...\n"
+
+            self.multi_output.delete("1.0", tk.END)
+            self.multi_output.insert(tk.END, out)
+        except Exception as e:
+            messagebox.showerror("错误", str(e))
+
+    def do_cbc_encrypt(self):
+        try:
+            key = int(self.cbc_key.get(), 16)
+            iv = int(self.cbc_iv.get(), 16)
+            text = self.cbc_input.get("1.0", "end-1c").strip().encode('utf-8')
+            blocks = cbc_encrypt(text, key, iv)
+            res_hex = " ".join([f"{b:04X}" for b in blocks])
+            self.cbc_output.delete("1.0", tk.END)
+            self.cbc_output.insert(tk.END, res_hex)
+        except Exception as e:
+            messagebox.showerror("错误", str(e))
+
+    def do_cbc_decrypt(self):
+        try:
+            key = int(self.cbc_key.get(), 16)
+            iv = int(self.cbc_iv.get(), 16)
+            text = self.cbc_input.get("1.0", "end-1c").strip()
+            blocks = [int(b, 16) for b in text.split()]
+            plain_bytes = cbc_decrypt(blocks, key, iv)
+            # 使用 latin-1 解码防止乱码报错
+            res_str = plain_bytes.decode('utf-8', errors='replace').replace('\x00', '')
+            self.cbc_output.delete("1.0", tk.END)
+            self.cbc_output.insert(tk.END, f"解密结果:\n{res_str}")
+        except Exception as e:
+            messagebox.showerror("错误", str(e))
 
 
 if __name__ == "__main__":
